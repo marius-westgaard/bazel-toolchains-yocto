@@ -50,6 +50,13 @@ def _setup_bazel_files(repository_ctx, config):
         executable = True,
     )
 
+    # Create symlink ld-linux-x86-64.so -> ld-linux-x86-64.so.2 in the native sysroot lib directory
+    # This symlink is required by some tools but not provided by default in the SDK
+    native_lib_dir = paths.join(config.native_sysroot, "lib")
+    symlink_target = paths.join(native_lib_dir, "ld-linux-x86-64.so")
+    if not repository_ctx.path(symlink_target).exists:
+        repository_ctx.symlink("ld-linux-x86-64.so.2", symlink_target)
+
     for tool in ["cpp", "gcc"]:
         repository_ctx.file(
             "bazel/toolchain/{}-{}".format(config.target_prefix, tool),
