@@ -229,7 +229,7 @@ def env_to_config(repository_ctx, env, relative_root = "."):
     # sysroot will be added by bazel toolchain config via builtin_sysroot variable
     compile_flags = remove_elements_starting_with_keyword("--sysroot", compile_flags)
     compile_flags_clang = remove_elements_starting_with_keyword("--sysroot", compile_flags_clang)
-    
+
     # Add canonical repository include paths for spawn_strategy=local
     # Use -nostdinc++ to disable compiler built-in search paths that look in wrong locations
     canonical_include_paths = [
@@ -242,32 +242,6 @@ def env_to_config(repository_ctx, env, relative_root = "."):
     compile_flags_clang.extend(canonical_include_paths)
     link_flags = remove_elements_starting_with_keyword("--sysroot", link_flags)
     link_flags_clang = remove_elements_starting_with_keyword("--sysroot", link_flags_clang)
-
-    # Check for rules_foreign_cc build tools in the SDK
-    # HARDCODED: Always enable foreign_cc toolchain
-    enable_foreign_cc = True
-    cmake_available = True
-    ninja_available = True
-    pkg_config_available = True
-    make_available = True
-
-    if native_sysroot_real:
-        # Check for cmake
-        cmake_res = repository_ctx.execute(["test", "-f", native_sysroot_real + "/usr/bin/cmake"], quiet = True)
-        cmake_available = cmake_res.return_code == 0
-
-        # Check for ninja
-        ninja_res = repository_ctx.execute(["test", "-f", native_sysroot_real + "/usr/bin/ninja"], quiet = True)
-        ninja_available = ninja_res.return_code == 0
-
-        # Check for pkg-config
-        pkg_config_res = repository_ctx.execute(["test", "-f", native_sysroot_real + "/usr/bin/pkg-config"], quiet = True)
-        pkg_config_available = pkg_config_res.return_code == 0
-
-        # Check for make (various names)
-        make_res = repository_ctx.execute(["sh", "-c", "test -f " + native_sysroot_real + "/usr/bin/make || test -f " + native_sysroot_real + "/usr/bin/gmake"], quiet = True)
-        make_available = make_res.return_code == 0
-
 
     return struct(
         builtin_sysroot = builtin_sysroot,
