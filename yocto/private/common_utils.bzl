@@ -253,7 +253,6 @@ def env_to_config(repository_ctx, env, relative_root = "."):
         cxx_flags_clang = cxx_flags_clang,
         dbg_compile_flags = dbg_compile_flags,
         dynamic_linker = dynamic_linker,
-        enable_foreign_cc = enable_foreign_cc,
         link_flags = link_flags,
         link_flags_clang = link_flags_clang,
         link_libs = link_libs,
