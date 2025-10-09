@@ -224,11 +224,6 @@ def env_to_config(repository_ctx, env, relative_root = "."):
                 "/proc/self/cwd/external/" + repository_ctx.name + "/" + paths.join(native_sysroot, "usr/lib/{tp}/gcc/{tp}".format(tp = target_prefix), ver, "include"),
                 "/proc/self/cwd/external/" + repository_ctx.name + "/" + paths.join(native_sysroot, "usr/lib/{tp}/gcc/{tp}".format(tp = target_prefix), ver, "include-fixed"),
             ])
-
-    # Debug: Print the final list to verify paths are included
-    print("Final cxx_builtin_include_directories for GCC (ALL):")
-    for path in cxx_builtin_include_directories:
-        print("  ", path)
     
     tool_paths = {
         "addr2line": "/bin/false",
