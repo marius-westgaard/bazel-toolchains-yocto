@@ -135,10 +135,19 @@ def env_to_config(repository_ctx, env, relative_root = "."):
     cxx_flags_clang = [flag for flag in format_command_options(env.get("CLANGCXX"), True) if flag not in compile_flags]
     cxx_flags_clang.extend([flag for flag in format_command_options(env.get("CXXFLAGS")) if flag not in compile_flags])
 
-    # Detect the C++/GCC version by examining the target sysroot
-    cpp_ver_dir = paths.join(target_sysroot_abs, "usr/include/c++")
-    res = repository_ctx.execute(["bash", "-c", "ls -1 " + cpp_ver_dir + " 2>/dev/null | head -n1"], quiet = True)
+    # Detect the GCC version by asking the compiler itself
+    # This is more reliable than scanning directories which may have multiple versions
+    gcc_cmd = "{}-gcc".format(target_prefix)
+    res = repository_ctx.execute(["bash", "-c", gcc_cmd + " -dumpversion 2>/dev/null"], quiet = True)
     gcc_ver = res.stdout.strip() if res.return_code == 0 and res.stdout.strip() else "13.3.0"
+    
+    print("Detected GCC version from compiler:", gcc_ver)
+    
+    # Also scan for all GCC versions in the native sysroot and add paths for all of them
+    gcc_builtin_dir = paths.join(native_sysroot_real, "usr/lib/{tp}/gcc/{tp}".format(tp = target_prefix))
+    res_versions = repository_ctx.execute(["bash", "-c", "ls -1 " + gcc_builtin_dir + " 2>/dev/null | grep -E '^[0-9]+\\.[0-9]+\\.[0-9]+$'"], quiet = True)
+    all_gcc_versions = res_versions.stdout.strip().split("\n") if res_versions.return_code == 0 and res_versions.stdout.strip() else []
+    print("Found GCC versions in native sysroot:", all_gcc_versions)
 
     # Add C++ and GCC builtin include directories to whitelist
     cxx_builtin_include_directories.extend([
@@ -163,6 +172,18 @@ def env_to_config(repository_ctx, env, relative_root = "."):
         "/proc/self/cwd/external/" + repository_ctx.name + "/" + paths.join(target_sysroot, "usr/include/c++", gcc_ver),
         "/proc/self/cwd/external/" + repository_ctx.name + "/" + paths.join(target_sysroot, "usr/include/c++", gcc_ver, target_prefix),
     ])
+    
+    # Add paths for all additional GCC versions found in the native sysroot
+    for ver in all_gcc_versions:
+        if ver and ver != gcc_ver:  # Don't duplicate the main version
+            cxx_builtin_include_directories.extend([
+                paths.join(native_sysroot_real, "usr/lib/{tp}/gcc/{tp}".format(tp = target_prefix), ver, "include"),
+                paths.join(native_sysroot_real, "usr/lib/{tp}/gcc/{tp}".format(tp = target_prefix), ver, "include-fixed"),
+                "/proc/self/cwd/" + paths.join(native_sysroot, "usr/lib/{tp}/gcc/{tp}".format(tp = target_prefix), ver, "include"),
+                "/proc/self/cwd/" + paths.join(native_sysroot, "usr/lib/{tp}/gcc/{tp}".format(tp = target_prefix), ver, "include-fixed"),
+                "/proc/self/cwd/external/" + repository_ctx.name + "/" + paths.join(native_sysroot, "usr/lib/{tp}/gcc/{tp}".format(tp = target_prefix), ver, "include"),
+                "/proc/self/cwd/external/" + repository_ctx.name + "/" + paths.join(native_sysroot, "usr/lib/{tp}/gcc/{tp}".format(tp = target_prefix), ver, "include-fixed"),
+            ])
 
     # Add clang builtin include directories
     cxx_builtin_include_directories_clang.extend([
@@ -191,7 +212,24 @@ def env_to_config(repository_ctx, env, relative_root = "."):
         "/proc/self/cwd/external/" + repository_ctx.name + "/" + paths.join(target_sysroot, "usr/include/c++", gcc_ver),
         "/proc/self/cwd/external/" + repository_ctx.name + "/" + paths.join(target_sysroot, "usr/include/c++", gcc_ver, target_prefix),
     ])
+    
+    # Add paths for all additional GCC versions found in the native sysroot (Clang may need these too)
+    for ver in all_gcc_versions:
+        if ver and ver != gcc_ver:  # Don't duplicate the main version
+            cxx_builtin_include_directories_clang.extend([
+                paths.join(native_sysroot_real, "usr/lib/{tp}/gcc/{tp}".format(tp = target_prefix), ver, "include"),
+                paths.join(native_sysroot_real, "usr/lib/{tp}/gcc/{tp}".format(tp = target_prefix), ver, "include-fixed"),
+                "/proc/self/cwd/" + paths.join(native_sysroot, "usr/lib/{tp}/gcc/{tp}".format(tp = target_prefix), ver, "include"),
+                "/proc/self/cwd/" + paths.join(native_sysroot, "usr/lib/{tp}/gcc/{tp}".format(tp = target_prefix), ver, "include-fixed"),
+                "/proc/self/cwd/external/" + repository_ctx.name + "/" + paths.join(native_sysroot, "usr/lib/{tp}/gcc/{tp}".format(tp = target_prefix), ver, "include"),
+                "/proc/self/cwd/external/" + repository_ctx.name + "/" + paths.join(native_sysroot, "usr/lib/{tp}/gcc/{tp}".format(tp = target_prefix), ver, "include-fixed"),
+            ])
 
+    # Debug: Print the final list to verify paths are included
+    print("Final cxx_builtin_include_directories for GCC (ALL):")
+    for path in cxx_builtin_include_directories:
+        print("  ", path)
+    
     tool_paths = {
         "addr2line": "/bin/false",
         "ar": "{}-ar".format(target_prefix),
@@ -231,15 +269,19 @@ def env_to_config(repository_ctx, env, relative_root = "."):
     compile_flags_clang = remove_elements_starting_with_keyword("--sysroot", compile_flags_clang)
 
     # Add canonical repository include paths for spawn_strategy=local
-    # Use -nostdinc++ to disable compiler built-in search paths that look in wrong locations
-    canonical_include_paths = [
-        "-nostdinc++",  # Disable built-in C++ include paths to prevent /include/c++ searches
+    canonical_include_paths_c = [
         "-I" + "external/+yocto_ext+yocto_aarch64/" + target_sysroot + "/usr/include",
+    ]
+    # Use -nostdinc++ to disable compiler built-in C++ include paths (C++ only!)
+    canonical_include_paths_cxx = [
+        "-nostdinc++",  # Disable built-in C++ include paths to prevent /include/c++ searches  
         "-I" + "external/+yocto_ext+yocto_aarch64/" + target_sysroot + "/usr/include/c++/13.3.0",
         "-I" + "external/+yocto_ext+yocto_aarch64/" + target_sysroot + "/usr/include/c++/13.3.0/" + target_prefix,
     ]
-    compile_flags.extend(canonical_include_paths)
-    compile_flags_clang.extend(canonical_include_paths)
+    compile_flags.extend(canonical_include_paths_c)
+    compile_flags_clang.extend(canonical_include_paths_c)
+    cxx_flags.extend(canonical_include_paths_cxx)
+    cxx_flags_clang.extend(canonical_include_paths_cxx)
     link_flags = remove_elements_starting_with_keyword("--sysroot", link_flags)
     link_flags_clang = remove_elements_starting_with_keyword("--sysroot", link_flags_clang)
 
